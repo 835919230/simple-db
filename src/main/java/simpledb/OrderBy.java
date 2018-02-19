@@ -109,6 +109,10 @@ class TupleComparator implements Comparator<Tuple> {
         this.asc = asc;
     }
 
+    public TupleComparator(int field) {
+        this(field, false);
+    }
+
     public int compare(Tuple o1, Tuple o2) {
         Field t1 = (o1).getField(field);
         Field t2 = (o2).getField(field);

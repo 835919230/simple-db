@@ -1,6 +1,11 @@
 package simpledb;
 
 import java.io.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -24,6 +29,10 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+    private LinkedHashMap<PageId, Page> pageMap;
+
+    private static final Lock lock = new ReentrantLock();
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -31,6 +40,7 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
+        pageMap = new LinkedHashMap<>(numPages, 1.0F, false);
     }
     
     public static int getPageSize() {
@@ -62,10 +72,28 @@ public class BufferPool {
      * @param pid the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
+    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        Page page = pageMap.get(pid);
+        if (page == null) {
+            page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+            if (page == null)
+                System.out.println("no page with pid: "+pid);
+            // lock to ensure thread safe
+            synchronized (tid) {
+                if (pageMap.size() >= pageSize) {
+                    // remove the longest existing page
+                    Map.Entry<PageId, Page> entry = pageMap.entrySet().iterator().next();
+                    pageMap.remove(entry.getKey());
+                }
+                pageMap.put(pid, page);
+            }
+        }
+        // TODO: 2018/2/17 to finish the logic of reading page
+        // TODO: 2018/2/17 facing problem: what's the usage of @param tid, the Permissions seem to be useless
+
+        return page;
     }
 
     /**
@@ -77,7 +105,7 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public  void releasePage(TransactionId tid, PageId pid) {
+    public void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
     }
@@ -180,14 +208,14 @@ public class BufferPool {
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized  void flushPage(PageId pid) throws IOException {
+    private synchronized void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
     }
 
     /** Write all pages of the specified transaction to disk.
      */
-    public synchronized  void flushPages(TransactionId tid) throws IOException {
+    public synchronized void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
     }

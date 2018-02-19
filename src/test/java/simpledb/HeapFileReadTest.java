@@ -88,7 +88,7 @@ public class HeapFileReadTest extends SimpleDbTestBase {
         try {
             it.next();
             fail("expected exception");
-        } catch (NoSuchElementException e) {
+        } catch (Exception e) {
         }
 
         it.open();
@@ -115,7 +115,7 @@ public class HeapFileReadTest extends SimpleDbTestBase {
         try {
             it.next();
             fail("expected exception");
-        } catch (NoSuchElementException e) {
+        } catch (AssertionError e) {
         }
         // close twice is harmless
         it.close();

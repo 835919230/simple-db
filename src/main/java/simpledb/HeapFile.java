@@ -15,6 +15,12 @@ import java.util.*;
  */
 public class HeapFile implements DbFile {
 
+    private File heapFile;
+
+    private TupleDesc tupleDesc;
+
+    private int pageNumbers;
+
     /**
      * Constructs a heap file backed by the specified file.
      * 
@@ -24,6 +30,10 @@ public class HeapFile implements DbFile {
      */
     public HeapFile(File f, TupleDesc td) {
         // some code goes here
+        heapFile = f;
+        tupleDesc = td;
+
+        pageNumbers = numPages();
     }
 
     /**
@@ -33,7 +43,7 @@ public class HeapFile implements DbFile {
      */
     public File getFile() {
         // some code goes here
-        return null;
+        return heapFile;
     }
 
     /**
@@ -47,7 +57,7 @@ public class HeapFile implements DbFile {
      */
     public int getId() {
         // some code goes here
-        throw new UnsupportedOperationException("implement this");
+        return heapFile.getAbsoluteFile().hashCode();
     }
 
     /**
@@ -57,19 +67,52 @@ public class HeapFile implements DbFile {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        throw new UnsupportedOperationException("implement this");
+        return tupleDesc;
     }
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) {
         // some code goes here
-        return null;
+        int[] pageInfo = pid.serialize();
+        try {
+            RandomAccessFile raf = new RandomAccessFile(heapFile, "rw");
+            int eachPageSize = BufferPool.getPageSize();
+            long pos = 0; // start of the file
+            long fileLength = raf.length();
+            int pageNo = 0;
+            while (pos < fileLength) {
+                raf.seek(pos);
+                byte[] data = HeapPage.createEmptyPageData();
+                int nRead = raf.read(data);
+                if (nRead <= -1) {
+                    System.err.println("reading problem...read data is under zero, please check");
+                    pos += (long)eachPageSize;
+                    continue;
+                }
+                if (pageNo == pageInfo[1] && getId() == pageInfo[0]) {
+                    // find the correct page and then return this page
+                    System.out.printf("page with pageId: %s, %s is found.", getId(), pageNo);
+                    System.out.println();
+                    return new HeapPage(new HeapPageId(pid.getTableId(), pid.getPageNumber()), data);
+                }
+                pos += (long)eachPageSize;
+                pageNo++;
+            }
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            System.out.println("file not exists in this file");
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.out.println("system ioe exception!");
+        }
+        throw new IllegalArgumentException("please check that page with pageid: "+pid+" exists");
     }
 
     // see DbFile.java for javadocs
     public void writePage(Page page) throws IOException {
         // some code goes here
         // not necessary for lab1
+        int[] pageInfo = page.getId().serialize();
     }
 
     /**
@@ -77,7 +120,7 @@ public class HeapFile implements DbFile {
      */
     public int numPages() {
         // some code goes here
-        return 0;
+        return (int) (heapFile.length() / BufferPool.getPageSize());
     }
 
     // see DbFile.java for javadocs
@@ -99,7 +142,95 @@ public class HeapFile implements DbFile {
     // see DbFile.java for javadocs
     public DbFileIterator iterator(TransactionId tid) {
         // some code goes here
-        return null;
+
+        return new HeapFileIterator(tid);
+    }
+
+    public class HeapFileIterator extends AbstractDbFileIterator {
+        /**
+         * index for page iterator
+         */
+        private int pageIndex;
+
+        private Iterator<Tuple> itr;
+
+        private TransactionId transactionId;
+
+        private int tableId;
+
+        private boolean opened;
+
+        public HeapFileIterator(TransactionId id)  {
+            transactionId = id;
+            tableId = HeapFile.this.getId();
+        }
+
+        @Override
+        public void open() throws DbException, TransactionAbortedException {
+            if (isPageOver())
+                return;
+            PageId pageId = new HeapPageId(tableId, pageIndex);
+            Page page = Database.getBufferPool().getPage(transactionId, pageId, Permissions.READ_ONLY);
+
+            HeapPage heapPage = (HeapPage) page;
+            itr = heapPage.iterator();
+
+            setOpened(true);
+        }
+
+        private void setOpened(boolean opened) {
+            this.opened = opened;
+        }
+
+        private boolean isOpened() {
+            return opened;
+        }
+
+        @Override
+        public void rewind() throws DbException, TransactionAbortedException {
+            pageIndex = 0;
+            open();
+        }
+
+        @Override
+        protected Tuple readNext() throws DbException, TransactionAbortedException {
+            if (isPageOver())
+                return null;
+            if (!itr.hasNext()) {
+                increasePageIndex();
+                open();
+                return readNext();
+            }
+            Tuple next = itr.next();
+            if (next == null)
+                increasePageIndex();
+            return next;
+        }
+
+        @Override
+        public Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException {
+            return readNext();
+        }
+
+        protected int increasePageIndex() {
+            return ++pageIndex;
+        }
+
+        protected boolean isPageOver() {
+            return pageIndex >= pageNumbers;
+        }
+
+        @Override
+        public boolean hasNext() throws DbException, TransactionAbortedException {
+            if (!isOpened() || isPageOver())
+                return false;
+
+            if (!itr.hasNext()) {
+                increasePageIndex();
+                open();
+            }
+            return !isPageOver();
+        }
     }
 
 }

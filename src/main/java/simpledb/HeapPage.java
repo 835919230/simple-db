@@ -67,7 +67,11 @@ public class HeapPage implements Page {
     */
     private int getNumTuples() {        
         // some code goes here
-        return 0;
+        int pageSize = BufferPool.getPageSize()*8;
+        TupleDesc tupleDesc = Database.getCatalog().getTupleDesc(pid.getTableId());
+        int tupleSize = tupleDesc.getSize();
+
+        return pageSize / (tupleSize*8+1);
 
     }
 
@@ -78,7 +82,7 @@ public class HeapPage implements Page {
     private int getHeaderSize() {        
         
         // some code goes here
-        return 0;
+        return (int)Math.ceil(((double)this.numSlots)/8.0);
                  
     }
     
@@ -112,7 +116,7 @@ public class HeapPage implements Page {
      */
     public HeapPageId getId() {
     // some code goes here
-    throw new UnsupportedOperationException("implement this");
+        return pid;
     }
 
     /**
@@ -126,6 +130,7 @@ public class HeapPage implements Page {
                 try {
                     dis.readByte();
                 } catch (IOException e) {
+                    System.out.println(slotId);
                     throw new NoSuchElementException("error reading empty tuple");
                 }
             }
@@ -282,7 +287,13 @@ public class HeapPage implements Page {
      */
     public int getNumEmptySlots() {
         // some code goes here
-        return 0;
+        int numEmptySlots = 0;
+        for (int i = 0; i < numSlots; i++) {
+            if (!isSlotUsed(i)) {
+                numEmptySlots++;
+            }
+        }
+        return numEmptySlots;
     }
 
     /**
@@ -290,7 +301,22 @@ public class HeapPage implements Page {
      */
     public boolean isSlotUsed(int i) {
         // some code goes here
-        return false;
+        int index = i / 8;
+        String s = getBit(header[index]);
+        return s.charAt(7-(i % 8)) == '1';
+    }
+
+    private static String getBit(byte by){
+        StringBuilder sb = new StringBuilder();
+        sb.append((by>>7)&0x1)
+                .append((by>>6)&0x1)
+                .append((by>>5)&0x1)
+                .append((by>>4)&0x1)
+                .append((by>>3)&0x1)
+                .append((by>>2)&0x1)
+                .append((by>>1)&0x1)
+                .append((by>>0)&0x1);
+        return sb.toString();
     }
 
     /**
@@ -299,6 +325,7 @@ public class HeapPage implements Page {
     private void markSlotUsed(int i, boolean value) {
         // some code goes here
         // not necessary for lab1
+        header[i] = value ? (byte)1 : (byte)0;
     }
 
     /**
@@ -307,7 +334,12 @@ public class HeapPage implements Page {
      */
     public Iterator<Tuple> iterator() {
         // some code goes here
-        return null;
+        List<Tuple> list = new ArrayList<>();
+        for (Tuple tuple : tuples) {
+            if (tuple != null)
+                list.add(tuple);
+        }
+        return list.iterator();
     }
 
 }
