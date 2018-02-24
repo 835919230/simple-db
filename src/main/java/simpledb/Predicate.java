@@ -1,6 +1,7 @@
 package simpledb;
 
 import java.io.Serializable;
+import java.util.Iterator;
 
 /**
  * Predicate compares tuples to a specified Field value.
@@ -9,23 +10,34 @@ public class Predicate implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    private int field;
+
+    private Op op;
+
+    private Field operand;
+
     public Predicate(int field, Predicate.Op op, Field operand) {
+        this.field = field;
+        this.op = op;
+        this.operand = operand;
     }
 
     public int getField() {
-        return -1;
+        return this.field;
     }
 
     public Predicate.Op getOp() {
-        return null;
+        return this.op;
     }
 
     public Field getOperand() {
-        return null;
+        return this.operand;
     }
 
     public boolean filter(Tuple t) {
-        return false;
+        return (t != null) &&
+                (field < t.getTupleDesc().numFields()) &&
+                t.getField(field).compare(op, operand);
     }
 
     public String toString() {

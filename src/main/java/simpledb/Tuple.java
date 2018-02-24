@@ -20,6 +20,20 @@ public class Tuple implements Serializable {
 
     private TupleDesc tupleDesc;
 
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof Tuple)) {
+            return false;
+        }
+        Tuple tuple = (Tuple) obj;
+        for (int i=0;i<fieldList.size();i++) {
+            if (!this.fieldList.get(i).equals(tuple.getField(i)))
+                return false;
+        }
+        return this.tupleDesc.equals(tuple.getTupleDesc()) &&
+                this.recordId.equals(tuple.getRecordId());
+    }
+
     /**
      * Create a new tuple with the specified schema (type).
      *

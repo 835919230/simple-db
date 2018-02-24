@@ -1,9 +1,8 @@
 package simpledb;
 
 import java.io.*;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -33,6 +32,8 @@ public class BufferPool {
 
     private static final Lock lock = new ReentrantLock();
 
+    private final AtomicInteger atomicNumPages;
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -40,7 +41,8 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
-        pageMap = new LinkedHashMap<>(numPages, 1.0F, false);
+        pageMap = new LinkedHashMap<>(DEFAULT_PAGES, 1.1F, false);
+        atomicNumPages = new AtomicInteger(numPages);
     }
     
     public static int getPageSize() {
@@ -78,14 +80,14 @@ public class BufferPool {
         Page page = pageMap.get(pid);
         if (page == null) {
             page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
-            if (page == null)
-                System.out.println("no page with pid: "+pid);
+            if (page == null) {
+                System.out.println("no page with pid: " + pid);
+                throw new DbException("no page with pid: " + pid);
+            }
             // lock to ensure thread safe
-            synchronized (tid) {
-                if (pageMap.size() >= pageSize) {
-                    // remove the longest existing page
-                    Map.Entry<PageId, Page> entry = pageMap.entrySet().iterator().next();
-                    pageMap.remove(entry.getKey());
+            synchronized (BufferPool.class) {
+                if (pageMap.size() >= DEFAULT_PAGES) {
+                    evictPage();
                 }
                 pageMap.put(pid, page);
             }
@@ -159,6 +161,14 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+
+        ArrayList<Page> dirtyPages = databaseFile.insertTuple(tid, t);
+        for (Page dirtyPage : dirtyPages) {
+            dirtyPage.markDirty(true, tid);
+            pageMap.put(dirtyPage.getId(), dirtyPage);
+        }
+//        flushAllPages();
     }
 
     /**
@@ -178,6 +188,31 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        RecordId recordId = t.getRecordId();
+        if (recordId!=null) {
+            int tableId = recordId.getPageId().getTableId();
+            DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+            synchronized (BufferPool.class) {
+                ArrayList<Page> dirtyPages = databaseFile.deleteTuple(tid, t);
+                for (Page dirtyPage : dirtyPages) {
+                    pageMap.put(dirtyPage.getId(), dirtyPage);
+                }
+            }
+            return;
+        }
+        // if recordId doesn't exist, loop all the cache table ids
+        Iterator<Integer> integerIterator = Database.getCatalog().tableIdIterator();
+        while (integerIterator.hasNext()) {
+            Integer tableId = integerIterator.next();
+            DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+            synchronized (BufferPool.class) {
+                ArrayList<Page> dirtyPages = databaseFile.deleteTuple(tid, t);
+                for (Page dirtyPage : dirtyPages) {
+                    pageMap.put(dirtyPage.getId(), dirtyPage);
+                }
+            }
+
+        }
     }
 
     /**
@@ -188,7 +223,17 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
-
+        Set<Map.Entry<PageId, Page>> entries = pageMap.entrySet();
+        for (Map.Entry<PageId, Page> entry : entries) {
+            Page page = entry.getValue();
+            if (page.isDirty() != null) {
+                int tableId = page.getId().getTableId();
+                DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+                databaseFile.writePage(page);
+                page.markDirty(false, null);
+            }
+        }
+        pageMap.clear();
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -202,6 +247,18 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         // not necessary for lab1
+        Page page = pageMap.get(pid);
+        if (page.isDirty() != null) {
+            DbFile databaseFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+            try {
+                databaseFile.writePage(page);
+                page.markDirty(false, null);
+            } catch (IOException e) {
+                e.printStackTrace();
+                return;
+            }
+        }
+        pageMap.remove(pid);
     }
 
     /**
@@ -211,6 +268,13 @@ public class BufferPool {
     private synchronized void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
+        if (!pageMap.containsKey(pid))
+            return;
+        Page page = pageMap.get(pid);
+        int tableId = page.getId().getTableId();
+        DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+        databaseFile.writePage(page);
+        page.markDirty(false, null);
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -224,9 +288,12 @@ public class BufferPool {
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
+    private synchronized void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
+        // remove the longest existing page
+        Map.Entry<PageId, Page> entry = pageMap.entrySet().iterator().next();
+        pageMap.remove(entry.getKey());
     }
 
 }

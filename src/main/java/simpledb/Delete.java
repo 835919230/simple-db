@@ -1,5 +1,8 @@
 package simpledb;
 
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
+
 /**
  * The delete operator. Delete reads tuples from its child operator and removes
  * them from the table they belong to.
@@ -7,6 +10,14 @@ package simpledb;
 public class Delete extends Operator {
 
     private static final long serialVersionUID = 1L;
+
+    private TransactionId transactionId;
+
+    private OpIterator child;
+
+    private TupleDesc tupleDesc;
+
+    private boolean isCalled = false;
 
     /**
      * Constructor specifying the transaction that this delete belongs to as
@@ -19,23 +30,32 @@ public class Delete extends Operator {
      */
     public Delete(TransactionId t, OpIterator child) {
         // some code goes here
+        this.transactionId = t;
+        this.child = child;
+        this.tupleDesc = new TupleDesc(new Type[]{Type.INT_TYPE});
     }
 
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return this.tupleDesc;
     }
 
     public void open() throws DbException, TransactionAbortedException {
         // some code goes here
+        super.open();
+        child.open();
+        isCalled = false;
     }
 
     public void close() {
         // some code goes here
+        super.close();
+        child.close();
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+        child.rewind();
     }
 
     /**
@@ -49,18 +69,37 @@ public class Delete extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+
+        if (isCalled)
+            return null;
+
+        int affectedRows = 0;
+        while (child.hasNext()) {
+            try {
+                Tuple next = child.next();
+                Database.getBufferPool().deleteTuple(this.transactionId, next);
+                System.out.println("delete tuple: "+next);
+                affectedRows++;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        Tuple tuple = new Tuple(new TupleDesc(new Type[]{Type.INT_TYPE}));
+        tuple.setField(0, new IntField(affectedRows));
+        isCalled = true;
+        return tuple;
     }
 
     @Override
     public OpIterator[] getChildren() {
         // some code goes here
-        return null;
+        return new OpIterator[]{child};
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
         // some code goes here
+        this.child = children[0];
     }
 
 }

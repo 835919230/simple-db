@@ -19,8 +19,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class Catalog {
 
-    private List<Table> tableList;
-
     private Map<Integer, Table> tableMap;
 
     /**
@@ -29,7 +27,6 @@ public class Catalog {
      */
     public Catalog() {
         // some code goes here
-        tableList = new CopyOnWriteArrayList<>();// ensure thread safe
         tableMap = new ConcurrentHashMap<>();    // ensure thread safe
     }
 

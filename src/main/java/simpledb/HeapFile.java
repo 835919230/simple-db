@@ -2,6 +2,8 @@ package simpledb;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * HeapFile is an implementation of a DbFile that stores a collection of tuples
@@ -20,6 +22,8 @@ public class HeapFile implements DbFile {
     private TupleDesc tupleDesc;
 
     private int pageNumbers;
+
+    private final ReentrantReadWriteLock readWriteLock = new ReentrantReadWriteLock();
 
     /**
      * Constructs a heap file backed by the specified file.
@@ -112,7 +116,13 @@ public class HeapFile implements DbFile {
     public void writePage(Page page) throws IOException {
         // some code goes here
         // not necessary for lab1
-        int[] pageInfo = page.getId().serialize();
+        int pageNo = page.getId().getPageNumber();
+        RandomAccessFile raf = new RandomAccessFile(heapFile, "rw");
+        raf.seek(pageNo*BufferPool.getPageSize());
+        raf.write(page.getPageData());
+
+        raf.close();
+        pageNumbers = numPages();
     }
 
     /**
@@ -127,16 +137,58 @@ public class HeapFile implements DbFile {
     public ArrayList<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
         // some code goes here
-        return null;
         // not necessary for lab1
+        // acquire a lock
+        ArrayList<Page> dirtyPages = new ArrayList<>();
+        readWriteLock.writeLock().lock();
+
+        int N = numPages();
+        boolean alreadyInsert = false;
+        for (int i = 0; i < N; i++) {
+            HeapPageId heapPageId = new HeapPageId(getId(), i);
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, heapPageId, Permissions.READ_WRITE);
+            try {
+                page.insertTuple(t);
+                // no need to write this page at once, leave the mass to BufferPool
+                alreadyInsert = true;
+                dirtyPages.add(page);
+            } catch (DbException e) {
+                // this page is full, loop until we get the page that is not full
+                continue;
+            }
+            // write success, break the loop
+            break;
+        }
+
+        if (!alreadyInsert) {
+            HeapPageId heapPageId = new HeapPageId(getId(), N);
+            HeapPage page = new HeapPage(heapPageId, HeapPage.createEmptyPageData());
+            page.insertTuple(t);
+            // new page should write at once
+            writePage(page);
+            dirtyPages.add(page);
+        }
+        //release write lock
+        readWriteLock.writeLock().unlock();
+        return dirtyPages;
     }
 
     // see DbFile.java for javadocs
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
         // some code goes here
-        return null;
         // not necessary for lab1
+        ArrayList<Page> dirtyPages = new ArrayList<>();
+        readWriteLock.writeLock().lock();
+        RecordId recordId = t.getRecordId();
+        if (recordId != null) {
+            PageId pageId = recordId.getPageId();
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+            page.deleteTuple(t);
+            dirtyPages.add(page);
+        }
+        readWriteLock.writeLock().unlock();
+        return dirtyPages;
     }
 
     // see DbFile.java for javadocs
@@ -167,6 +219,7 @@ public class HeapFile implements DbFile {
 
         @Override
         public void open() throws DbException, TransactionAbortedException {
+            HeapFile.this.pageNumbers = numPages();
             if (isPageOver())
                 return;
             PageId pageId = new HeapPageId(tableId, pageIndex);
@@ -217,7 +270,7 @@ public class HeapFile implements DbFile {
         }
 
         protected boolean isPageOver() {
-            return pageIndex >= pageNumbers;
+            return pageIndex >= numPages();
         }
 
         @Override
@@ -225,11 +278,11 @@ public class HeapFile implements DbFile {
             if (!isOpened() || isPageOver())
                 return false;
 
-            if (!itr.hasNext()) {
+            while (!itr.hasNext() && !isPageOver()) {
                 increasePageIndex();
                 open();
             }
-            return !isPageOver();
+            return !isPageOver() && itr!=null&& itr.hasNext();
         }
     }
 
