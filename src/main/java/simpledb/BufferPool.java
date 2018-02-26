@@ -293,6 +293,11 @@ public class BufferPool {
         // not necessary for lab1
         // remove the longest existing page
         Map.Entry<PageId, Page> entry = pageMap.entrySet().iterator().next();
+        try {
+            flushPage(entry.getKey());
+        } catch (IOException e) {
+            throw new DbException("can't flush page with pid: "+entry.getKey());
+        }
         pageMap.remove(entry.getKey());
     }
 
