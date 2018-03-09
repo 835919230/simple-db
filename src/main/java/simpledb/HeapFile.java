@@ -95,8 +95,8 @@ public class HeapFile implements DbFile {
                 }
                 if (pageNo == pageInfo[1] && getId() == pageInfo[0]) {
                     // find the correct page and then return this page
-                    System.out.printf("page with pageId: %s, %s is found.", getId(), pageNo);
-                    System.out.println();
+//                    System.out.printf("page with pageId: %s, %s is found.", getId(), pageNo);
+//                    System.out.println();
                     return new HeapPage(new HeapPageId(pid.getTableId(), pid.getPageNumber()), data);
                 }
                 pos += (long)eachPageSize;
@@ -147,15 +147,13 @@ public class HeapFile implements DbFile {
         for (int i = 0; i < N; i++) {
             HeapPageId heapPageId = new HeapPageId(getId(), i);
             HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, heapPageId, Permissions.READ_WRITE);
-            try {
-                page.insertTuple(t);
-                // no need to write this page at once, leave the mass to BufferPool
-                alreadyInsert = true;
-                dirtyPages.add(page);
-            } catch (DbException e) {
-                // this page is full, loop until we get the page that is not full
+            if (page.getNumEmptySlots() <= 0) {
                 continue;
             }
+            page.insertTuple(t);
+                // no need to write this page at once, leave the mass to BufferPool
+            alreadyInsert = true;
+            dirtyPages.add(page);
             // write success, break the loop
             break;
         }

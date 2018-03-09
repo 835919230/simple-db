@@ -252,6 +252,20 @@ public class HeapPage implements Page {
     public void deleteTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
+        RecordId recordId = t.getRecordId();
+        if (recordId != null) {
+            int tupNo = recordId.getTupleNumber();
+            Tuple tuple = tuples[tupNo];
+            if (tuple==null) {
+                throw new DbException(String.format("tuple slot: %d is empty.", tupNo));
+            }
+            if (tuple.equals(t)) {
+                tuples[tupNo] = null;
+                markSlotUsed(tupNo, false);
+                return;
+            }
+        }
+
         boolean found = false;
         for (int i = 0; i < tuples.length; i++) {
             Tuple tuple = tuples[i];
@@ -285,7 +299,7 @@ public class HeapPage implements Page {
             if (tuples[i] == null && !isSlotUsed(i)) {
                 tuples[i] = t;
                 markSlotUsed(i, true);
-                tuples[i].setRecordId(new RecordId(getId(), getNumTuples()));
+                tuples[i].setRecordId(new RecordId(getId(), i));
                 isFull = false;
                 break;
             }
@@ -334,9 +348,9 @@ public class HeapPage implements Page {
      */
     public boolean isSlotUsed(int i) {
         // some code goes here
-        int index = i / 8;
+        int index = getHeaderIndex(i);
         String s = getBit(header[index]);
-        return s.charAt(7-(i % 8)) == '1';
+        return s.charAt(getBitIndex(i)) == '1';
     }
 
     private static String getBit(byte by){

@@ -111,7 +111,9 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            return -1.0;
+            // joincost(t1 join t2) = scancost(t1) + ntups(t1) x scancost(t2) //IO cost
+            //         + ntups(t1) x ntups(t2)  //CPU cost
+            return cost1 + card1 * cost2 + card1 * card2;
         }
     }
 
@@ -155,9 +157,27 @@ public class JoinOptimizer {
                                                    String field2PureName, int card1, int card2, boolean t1pkey,
                                                    boolean t2pkey, Map<String, TableStats> stats,
                                                    Map<String, Integer> tableAliasToId) {
-        int card = 1;
-        // some code goes here
-        return card <= 0 ? 1 : card;
+        int joinCardinality;
+        switch (joinOp) {
+            case EQUALS:
+                if (t1pkey && t2pkey) {
+                    joinCardinality = Math.min(card1, card2);
+                } else if (t1pkey) {
+                    joinCardinality = card2;
+                } else if (t2pkey) {
+                    joinCardinality = card1;
+                } else {
+                    joinCardinality = Math.max(card1, card2);
+                }
+                break;
+            case NOT_EQUALS:
+                joinCardinality = card1 * card2;
+                break;
+            default:
+                joinCardinality = (int) (0.5 * card1 * card2);
+                break;
+        }
+        return joinCardinality;
     }
 
     /**
@@ -221,7 +241,134 @@ public class JoinOptimizer {
 
         // some code goes here
         //Replace the following
-        return joins;
+        int lengthOfJ = joins.size();
+        Vector<LogicalJoinNode> bestPlan = null;
+        PlanCache planCache = new PlanCache();
+        for (int i = 1; i <= lengthOfJ; i++) {
+            Iterator<Set<LogicalJoinNode>> subsetIterator = getSubsetIterator(joins, i);
+//            Set<Set<LogicalJoinNode>> subsets = enumerateSubsets(joins, i);
+            while (subsetIterator.hasNext()) {
+                Set<LogicalJoinNode> s = subsetIterator.next();
+                double bestCostSoFar = Double.MAX_VALUE;
+                CostCard bestPlanSoFar = null;
+                for (LogicalJoinNode joinNode : s) {
+                    CostCard costCard = computeCostAndCardOfSubplan(stats, filterSelectivities, joinNode, s, bestCostSoFar, planCache);
+                    if (costCard != null && costCard.cost < bestCostSoFar) {
+                        bestCostSoFar = costCard.cost;
+                        bestPlanSoFar = costCard;
+                    }
+                }
+                if (bestPlanSoFar != null) {
+                    planCache.addPlan(s, bestPlanSoFar.cost, bestPlanSoFar.card, bestPlanSoFar.plan);
+                }
+            }
+        }
+        bestPlan = planCache.getOrder(new HashSet<LogicalJoinNode>(joins));
+        if (explain) {
+            printJoins(bestPlan, planCache, stats, filterSelectivities);
+        }
+        return bestPlan;
+    }
+
+    public <T> Iterator<Set<T>> getSubsetIterator(final Vector<T> v, int size) {
+        final SubsetBitsetIterator bitsetIterator = new SubsetBitsetIterator(v.size(), size);
+        return new Iterator<Set<T>>() {
+
+            @Override
+            public boolean hasNext() {
+                return bitsetIterator.hasNext();
+            }
+
+            @Override
+            public Set<T> next() {
+                List<Integer> bitset = bitsetIterator.next();
+                Set<T> subset = new HashSet<T>();
+                for (int i = 0; i < v.size(); i++) {
+                    if (bitset.get(i) == SubsetBitsetIterator.ONE) {
+                        subset.add(v.get(i));
+                    }
+                }
+                return subset;
+            }
+
+            @Override
+            public void remove() {
+                throw new UnsupportedOperationException();
+            }
+
+        };
+    }
+
+    private static class SubsetBitsetIterator implements Iterator<List<Integer>> {
+
+        private final int superSize;
+        private final List<Integer> next;
+
+        protected static final Integer ZERO = Integer.valueOf(0);
+        protected static final Integer ONE = Integer.valueOf(1);
+
+        protected SubsetBitsetIterator(int superSize, int subSize) {
+            this.superSize = superSize;
+            this.next = new ArrayList<Integer>();
+            for (int i = 0; i < superSize; i++) {
+                if (i < subSize) {
+                    next.add(ONE);
+                } else {
+                    next.add(ZERO);
+                }
+            }
+        }
+
+        @Override
+        public boolean hasNext() {
+            return !next.isEmpty();
+        }
+
+        @Override
+        public List<Integer> next() {
+            List<Integer> oldNext = new ArrayList<Integer>(next);
+            if (oldNext.get(superSize - 1) == ZERO) {
+                int i;
+                for (i  = superSize - 2; i >= 0; i--) {
+                    if (oldNext.get(i) == ONE) {
+                        break;
+                    }
+                }
+                next.set(i, ZERO);
+                next.set(i + 1, ONE);
+            } else {
+                int numberOfTrailingOnes = 0;
+                int i;
+                for (i = superSize - 1; i >= 0; i--) {
+                    if (oldNext.get(i) == ZERO) {
+                        break;
+                    }
+                    next.set(i, ZERO);
+                    numberOfTrailingOnes++;
+                }
+                for (i-- ; i >= 0; i--) {
+                    if (oldNext.get(i) == ONE) {
+                        break;
+                    }
+                }
+                if (i < 0) {
+                    next.clear();
+                    return oldNext;
+                }
+                next.set(i, ZERO);
+                i++;
+                for (int j = 0; j < numberOfTrailingOnes + 1; j++) {
+                    next.set(i + j, ONE);
+                }
+            }
+            return oldNext;
+        }
+
+        @Override
+        public void remove() {
+            throw new UnsupportedOperationException();
+        }
+
     }
 
     // ===================== Private Methods =================================
