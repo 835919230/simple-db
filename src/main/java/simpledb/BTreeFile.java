@@ -758,43 +758,59 @@ public class BTreeFile implements DbFile {
 		// that the entries are evenly distributed. Be sure to update
 		// the corresponding parent entry. Be sure to update the parent
 		// pointers of all children in the entries that were moved.
-		dirtypages.put(parent.getId(), parent);
-		dirtypages.put(page.getId(), page);
-		dirtypages.put(leftSibling.getId(), leftSibling);
-		Iterator<BTreeEntry> sit = leftSibling.reverseIterator();
-		Iterator<BTreeEntry> pit = page.iterator();
-		BTreeEntry se = sit.next();
-		BTreeEntry pe = pit.next();
-		// push parentEntry down
-		parent.deleteKeyAndRightChild(parentEntry);
-		parentEntry.setLeftChild(se.getRightChild());
-		parentEntry.setRightChild(pe.getLeftChild());
-		page.insertEntry(parentEntry);
-
-		int half = (page.getNumEntries() + leftSibling.getNumEntries() - 1)>>1;
-		int index = page.getNumEntries();
-		sit = leftSibling.reverseIterator();
-		for (int i = index; i < half; i++) {
-			BTreeEntry e = sit.next();
-			leftSibling.deleteKeyAndRightChild(e);
-			page.insertEntry(e);
+//		dirtypages.put(parent.getId(), parent);
+//		dirtypages.put(page.getId(), page);
+//		dirtypages.put(leftSibling.getId(), leftSibling);
+//		Iterator<BTreeEntry> sit = leftSibling.reverseIterator();
+//		Iterator<BTreeEntry> pit = page.iterator();
+//		BTreeEntry se = sit.next();
+//		BTreeEntry pe = pit.next();
+//		// push parentEntry down
+//		parent.deleteKeyAndRightChild(parentEntry);
+//		parentEntry.setLeftChild(se.getRightChild());
+//		parentEntry.setRightChild(pe.getLeftChild());
+//		page.insertEntry(parentEntry);
+//
+//		int half = (page.getNumEntries() + leftSibling.getNumEntries() - 1)>>1;
+//		int index = page.getNumEntries();
+//		sit = leftSibling.reverseIterator();
+//		for (int i = index; i < half; i++) {
+//			BTreeEntry e = sit.next();
+//			leftSibling.deleteKeyAndRightChild(e);
+//			page.insertEntry(e);
+//		}
+//
+//		BTreeEntry up = sit.next();
+//		leftSibling.deleteKeyAndRightChild(up);
+//		up.setLeftChild(leftSibling.getId());
+//		up.setRightChild(page.getId());
+//		parent.insertEntry(up);
+//
+//		updateParentPointers(tid, dirtypages, parent);
+//		updateParentPointers(tid, dirtypages, leftSibling);
+//		updateParentPointers(tid, dirtypages, page);
+//		if (parent.getParentId() != null) {
+//			Page pp = getPage(tid, dirtypages, parent.getParentId(), Permissions.READ_WRITE);
+//			if (pp instanceof BTreeInternalPage) {
+//				updateParentPointers(tid, dirtypages, (BTreeInternalPage) pp);
+//			}
+//		}
+		int numSteal = (leftSibling.getNumEntries() - page.getNumEntries()) / 2;
+		Iterator<BTreeEntry> es = leftSibling.reverseIterator();
+		if (es == null || !es.hasNext()) throw new DbException("Illegal entry iterator.");
+		BTreeEntry e_center = new BTreeEntry(parentEntry.getKey(), null, page.iterator().next().getLeftChild());
+		for (int j = 0; j < numSteal; j ++) {
+			if (!es.hasNext()) throw new DbException("No more entries.");
+			BTreeEntry e_left = es.next();
+			e_center.setLeftChild(e_left.getRightChild());
+			page.insertEntry(e_center);
+			e_center = new BTreeEntry(e_left.getKey(), null, e_left.getRightChild());
+			leftSibling.deleteKeyAndRightChild(e_left);
 		}
-
-		BTreeEntry up = sit.next();
-		leftSibling.deleteKeyAndRightChild(up);
-		up.setLeftChild(leftSibling.getId());
-		up.setRightChild(page.getId());
-		parent.insertEntry(up);
-
-		updateParentPointers(tid, dirtypages, parent);
-		updateParentPointers(tid, dirtypages, leftSibling);
+		parentEntry.setKey(e_center.getKey());
+		parent.updateEntry(parentEntry);
 		updateParentPointers(tid, dirtypages, page);
-		if (parent.getParentId() != null) {
-			Page pp = getPage(tid, dirtypages, parent.getParentId(), Permissions.READ_WRITE);
-			if (pp instanceof BTreeInternalPage) {
-				updateParentPointers(tid, dirtypages, (BTreeInternalPage) pp);
-			}
-		}
+		updateParentPointers(tid, dirtypages, leftSibling);
 	}
 	
 	/**
@@ -824,46 +840,62 @@ public class BTreeFile implements DbFile {
 		// the corresponding parent entry. Be sure to update the parent
 		// pointers of all children in the entries that were moved.
 
-		dirtypages.put(parent.getId(), parent);
-		dirtypages.put(page.getId(), page);
-		dirtypages.put(rightSibling.getId(), rightSibling);
-		Iterator<BTreeEntry> sit = rightSibling.iterator();
-		Iterator<BTreeEntry> pit = page.reverseIterator();
-		BTreeEntry se = sit.next();
-		BTreeEntry pe = pit.next();
-		// push parentEntry down
-		parent.deleteKeyAndLeftChild(parentEntry);
-		parentEntry.setLeftChild(se.getLeftChild());
-		parentEntry.setRightChild(pe.getRightChild());
-		page.insertEntry(parentEntry);
-
-		int half = (page.getNumEntries() + rightSibling.getNumEntries() - 1)>>1;
-		int index = page.getNumEntries();
-		sit = rightSibling.iterator();
-		for (int i = index; i < half; i++) {
-			BTreeEntry e = sit.next();
-			rightSibling.deleteKeyAndLeftChild(e);
-			pit = page.reverseIterator();
-			BTreeEntry last = pit.next();
-			e.setLeftChild(last.getRightChild());
-			page.insertEntry(e);
+//		dirtypages.put(parent.getId(), parent);
+//		dirtypages.put(page.getId(), page);
+//		dirtypages.put(rightSibling.getId(), rightSibling);
+//		Iterator<BTreeEntry> sit = rightSibling.iterator();
+//		Iterator<BTreeEntry> pit = page.reverseIterator();
+//		BTreeEntry se = sit.next();
+//		BTreeEntry pe = pit.next();
+//		// push parentEntry down
+//		parent.deleteKeyAndLeftChild(parentEntry);
+//		parentEntry.setLeftChild(se.getLeftChild());
+//		parentEntry.setRightChild(pe.getRightChild());
+//		page.insertEntry(parentEntry);
+//
+//		int half = (page.getNumEntries() + rightSibling.getNumEntries() - 1)>>1;
+//		int index = page.getNumEntries();
+//		sit = rightSibling.iterator();
+//		for (int i = index; i < half; i++) {
+//			BTreeEntry e = sit.next();
+//			rightSibling.deleteKeyAndLeftChild(e);
+//			pit = page.reverseIterator();
+//			BTreeEntry last = pit.next();
+//			e.setLeftChild(last.getRightChild());
+//			page.insertEntry(e);
+//		}
+//
+//		BTreeEntry up = sit.next();
+//		rightSibling.deleteKeyAndRightChild(up);
+//		up.setRightChild(rightSibling.getId());
+//		up.setLeftChild(page.getId());
+//		parent.insertEntry(up);
+//
+//		updateParentPointers(tid, dirtypages, parent);
+//		updateParentPointers(tid, dirtypages, rightSibling);
+//		updateParentPointers(tid, dirtypages, page);
+//		if (parent.getParentId() != null) {
+//			Page pp = getPage(tid, dirtypages, parent.getParentId(), Permissions.READ_WRITE);
+//			if (pp instanceof BTreeInternalPage) {
+//				updateParentPointers(tid, dirtypages, (BTreeInternalPage) pp);
+//			}
+//		}
+		int numSteal = (rightSibling.getNumEntries() - page.getNumEntries()) / 2;
+		Iterator<BTreeEntry> es = rightSibling.iterator();
+		if (es == null || !es.hasNext()) throw new DbException("Illegal entry iterator.");
+		BTreeEntry e_center = new BTreeEntry(parentEntry.getKey(), page.reverseIterator().next().getRightChild(), null);
+		for (int j = 0; j < numSteal; j ++) {
+			if (!es.hasNext()) throw new DbException("No more entries.");
+			BTreeEntry e_right = es.next();
+			e_center.setRightChild(e_right.getLeftChild());
+			page.insertEntry(e_center);
+			e_center = new BTreeEntry(e_right.getKey(), e_right.getLeftChild(), null);
+			rightSibling.deleteKeyAndLeftChild(e_right);
 		}
-
-		BTreeEntry up = sit.next();
-		rightSibling.deleteKeyAndRightChild(up);
-		up.setRightChild(rightSibling.getId());
-		up.setLeftChild(page.getId());
-		parent.insertEntry(up);
-
-		updateParentPointers(tid, dirtypages, parent);
-		updateParentPointers(tid, dirtypages, rightSibling);
+		parentEntry.setKey(e_center.getKey());
+		parent.updateEntry(parentEntry);
 		updateParentPointers(tid, dirtypages, page);
-		if (parent.getParentId() != null) {
-			Page pp = getPage(tid, dirtypages, parent.getParentId(), Permissions.READ_WRITE);
-			if (pp instanceof BTreeInternalPage) {
-				updateParentPointers(tid, dirtypages, (BTreeInternalPage) pp);
-			}
-		}
+		updateParentPointers(tid, dirtypages, rightSibling);
 
 	}
 	
