@@ -3,6 +3,7 @@ package simpledb;
 
 import java.util.*;
 import java.io.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The interface for database files on disk. Each table is represented by a
@@ -88,4 +89,6 @@ public interface DbFile {
      * @return TupleDesc of this DbFile.
      */
     public TupleDesc getTupleDesc();
+
+    public AtomicInteger lastModifiedPageOffset();
 }

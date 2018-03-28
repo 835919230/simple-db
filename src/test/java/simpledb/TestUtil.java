@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -244,6 +245,11 @@ public class TestUtil {
 		public TupleDesc getTupleDesc() {			
 			return td;
 		}
+
+        @Override
+        public AtomicInteger lastModifiedPageOffset() {
+            return null;
+        }
     }
 
     /**

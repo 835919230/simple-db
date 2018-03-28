@@ -2,6 +2,7 @@ package simpledb;
 
 import java.util.*;
 import java.io.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Each instance of HeapPage stores data for one page of HeapFiles and 
@@ -23,6 +24,8 @@ public class HeapPage implements Page {
     private final Byte oldDataLock=new Byte((byte)0);
 
     private TransactionId transactionId;
+
+    private final AtomicInteger lastModifiedIndex = new AtomicInteger(0);
 
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
@@ -54,8 +57,12 @@ public class HeapPage implements Page {
         tuples = new Tuple[numSlots];
         try{
             // allocate and read the actual records of this page
-            for (int i=0; i<tuples.length; i++)
-                tuples[i] = readNextTuple(dis,i);
+            for (int i=0; i<tuples.length; i++) {
+                tuples[i] = readNextTuple(dis, i);
+                if (tuples[i] != null) {
+                    lastModifiedIndex.set(i);
+                }
+            }
         }catch(NoSuchElementException e){
             e.printStackTrace();
         }
@@ -262,6 +269,7 @@ public class HeapPage implements Page {
             if (tuple.equals(t)) {
                 tuples[tupNo] = null;
                 markSlotUsed(tupNo, false);
+                lastModifiedIndex.set(tupNo);
                 return;
             }
         }
@@ -294,20 +302,28 @@ public class HeapPage implements Page {
         if (!td.equals(t.getTupleDesc())) {
             throw new DbException("tuple description mismatch.");
         }
-        boolean isFull = true;
-        for (int i = 0; i < tuples.length; i++) {
-            if (tuples[i] == null && !isSlotUsed(i)) {
-                tuples[i] = t;
-                markSlotUsed(i, true);
-                tuples[i].setRecordId(new RecordId(getId(), i));
-                isFull = false;
-                break;
-            }
-        }
-
+        boolean isFull = getNumEmptySlots() <= 0;
         if (isFull) {
             throw new DbException("page is full!");
         }
+        while (tuples[lastModifiedIndex.get()] != null) {
+            // only one thread can succeed in this race
+            lastModifiedIndex.incrementAndGet();
+        }
+        int index = lastModifiedIndex.get();
+        tuples[index] = t;
+        tuples[index].setRecordId(new RecordId(getId(), index));
+        markSlotUsed(index, true);
+        lastModifiedIndex.set(index);
+//        for (int i = 0; i < tuples.length; i++) {
+//            if (tuples[i] == null && !isSlotUsed(i)) {
+//                tuples[i] = t;
+//                markSlotUsed(i, true);
+//                tuples[i].setRecordId(new RecordId(getId(), i));
+//                isFull = false;
+//                break;
+//            }
+//        }
     }
 
     /**

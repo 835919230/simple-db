@@ -2,6 +2,7 @@ package simpledb;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -23,7 +24,7 @@ public class HeapFile implements DbFile {
 
     private int pageNumbers;
 
-    private final ReentrantReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+    private AtomicInteger lastModifiedPageOffset = new AtomicInteger(0);
 
     /**
      * Constructs a heap file backed by the specified file.
@@ -38,6 +39,7 @@ public class HeapFile implements DbFile {
         tupleDesc = td;
 
         pageNumbers = numPages();
+        lastModifiedPageOffset.set(pageNumbers > 0 ? pageNumbers - 1 : 0);
     }
 
     /**
@@ -138,36 +140,35 @@ public class HeapFile implements DbFile {
             throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
-        // acquire a lock
         ArrayList<Page> dirtyPages = new ArrayList<>();
-        readWriteLock.writeLock().lock();
 
         int N = numPages();
         boolean alreadyInsert = false;
-        for (int i = 0; i < N; i++) {
-            HeapPageId heapPageId = new HeapPageId(getId(), i);
-            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, heapPageId, Permissions.READ_WRITE);
-            if (page.getNumEmptySlots() <= 0) {
-                continue;
+
+        int offset = lastModifiedPageOffset.get();
+        while (offset < numPages()) {
+            HeapPageId pageId = new HeapPageId(getId(), offset);
+            HeapPage heapPage = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+            if (heapPage.getNumEmptySlots() > 0) {
+                heapPage.insertTuple(t);
+                alreadyInsert = true;
+                // no need to change the lastModifiedPageOffset
+                dirtyPages.add(heapPage);
+                lastModifiedPageOffset.set(offset);
+                break;
             }
-            page.insertTuple(t);
-                // no need to write this page at once, leave the mass to BufferPool
-            alreadyInsert = true;
-            dirtyPages.add(page);
-            // write success, break the loop
-            break;
+            offset++;
         }
 
         if (!alreadyInsert) {
             HeapPageId heapPageId = new HeapPageId(getId(), N);
-            HeapPage page = new HeapPage(heapPageId, HeapPage.createEmptyPageData());
-            page.insertTuple(t);
+            HeapPage heapPage = new HeapPage(heapPageId, HeapPage.createEmptyPageData());
+            heapPage.insertTuple(t);
             // new page should write at once
-            writePage(page);
-            dirtyPages.add(page);
+            writePage(heapPage);
+            dirtyPages.add(heapPage);
+            lastModifiedPageOffset.set(N);
         }
-        //release write lock
-        readWriteLock.writeLock().unlock();
         return dirtyPages;
     }
 
@@ -177,16 +178,21 @@ public class HeapFile implements DbFile {
         // some code goes here
         // not necessary for lab1
         ArrayList<Page> dirtyPages = new ArrayList<>();
-        readWriteLock.writeLock().lock();
         RecordId recordId = t.getRecordId();
         if (recordId != null) {
             PageId pageId = recordId.getPageId();
             HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
             page.deleteTuple(t);
+            lastModifiedPageOffset.set(page.getId().getPageNumber());
             dirtyPages.add(page);
         }
-        readWriteLock.writeLock().unlock();
+        System.out.println("Thread: "+Thread.currentThread().getName()+" delete tuple");
         return dirtyPages;
+    }
+
+    @Override
+    public AtomicInteger lastModifiedPageOffset() {
+        return this.lastModifiedPageOffset;
     }
 
     // see DbFile.java for javadocs
